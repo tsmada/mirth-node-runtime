@@ -1,6 +1,7 @@
 import { Channel } from '../models/Channel.js';
 import { Connector, ConnectorMode } from '../models/Connector.js';
 import { JavaScriptExecutor } from '../runtime/JavaScriptExecutor.js';
+import { FilterTransformerTask, PreprocessorTask, PostprocessorTask, ResponseTransformerTask } from '../runtime/JavaScriptTask.js';
 import { Logger } from '../utils/Logger.js';
 
 /**
@@ -32,10 +33,17 @@ export class ChannelProcessor {
       // Execute preprocessor script
       if (this.channel.preprocessingScript) {
         if (this.debugMode) this.logger.info(`[CHANNEL: ${this.channel.name}] Executing preprocessor script`);
-        const originalMessage = JSON.stringify(message);
-        message = this.jsExecutor.execute(this.channel.preprocessingScript, message);
         
-        if (this.debugMode && JSON.stringify(message) !== originalMessage) {
+        const preprocessorTask = new PreprocessorTask(
+          this.channel.id,
+          this.channel.name,
+          this.channel.preprocessingScript,
+          message
+        );
+        
+        message = await preprocessorTask.call();
+        
+        if (this.debugMode) {
           this.logger.info(`[CHANNEL: ${this.channel.name}] Message after preprocessor:`);
           this.logger.info(message);
         }
@@ -60,7 +68,15 @@ export class ChannelProcessor {
       // Execute postprocessor script
       if (this.channel.postprocessingScript) {
         if (this.debugMode) this.logger.info(`[CHANNEL: ${this.channel.name}] Executing postprocessor script`);
-        this.jsExecutor.execute(this.channel.postprocessingScript, sourceResult.message);
+        
+        const postprocessorTask = new PostprocessorTask(
+          this.channel.id,
+          this.channel.name,
+          this.channel.postprocessingScript,
+          sourceResult.message
+        );
+        
+        await postprocessorTask.call();
       }
       
       if (this.debugMode) this.logger.info(`[CHANNEL: ${this.channel.name}] Message processing complete`);
@@ -137,7 +153,15 @@ export class ChannelProcessor {
         }
         
         if (rule.type === 'JavaScript') {
-          const result = this.jsExecutor.execute(rule.script, message);
+          const filterTask = new FilterTransformerTask(
+            this.channel.id,
+            this.channel.name,
+            rule.script,
+            message,
+            true
+          );
+          
+          const result = await filterTask.call();
           
           if (this.debugMode) {
             this.logger.info(`[FILTER: ${connector.name}] Rule result: ${result}`);
@@ -190,7 +214,15 @@ export class ChannelProcessor {
         const originalMessage = JSON.stringify(transformedMessage);
         
         if (step.type === 'JavaScript') {
-          transformedMessage = this.jsExecutor.execute(step.script, transformedMessage);
+          const transformerTask = new FilterTransformerTask(
+            this.channel.id,
+            this.channel.name,
+            step.script,
+            transformedMessage,
+            false
+          );
+          
+          transformedMessage = await transformerTask.call();
         }
         
         if (this.debugMode && JSON.stringify(transformedMessage) !== originalMessage) {
@@ -213,7 +245,7 @@ export class ChannelProcessor {
     try {
       if (this.channel.deployScript) {
         this.logger.info(`[CHANNEL: ${this.channel.name}] Executing deploy script`);
-        this.jsExecutor.execute(this.channel.deployScript);
+        this.jsExecutor.execute(this.channel.deployScript, null, this.channel.id, this.channel.name, 'deploy');
       }
     } catch (error) {
       this.logger.error(`Error deploying channel: ${error}`);
@@ -228,7 +260,7 @@ export class ChannelProcessor {
     try {
       if (this.channel.undeployScript) {
         this.logger.info(`[CHANNEL: ${this.channel.name}] Executing undeploy script`);
-        this.jsExecutor.execute(this.channel.undeployScript);
+        this.jsExecutor.execute(this.channel.undeployScript, null, this.channel.id, this.channel.name, 'undeploy');
       }
     } catch (error) {
       this.logger.error(`Error undeploying channel: ${error}`);

@@ -121,7 +121,7 @@ function extractChannelConfig(tsContent: string): any {
   };
   
   // Extract destination connectors from destinations array
-  const destinationsRegex = /destinations\s*:\s*\[\s*{([^}]*)}\s*\]/s;
+  const destinationsRegex = /destinations\s*:\s*\[\s*{([\s\S]*?)}\s*\]/;
   const destinationsMatch = tsContent.match(destinationsRegex);
   
   if (destinationsMatch && destinationsMatch[1]) {
